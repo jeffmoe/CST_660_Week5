@@ -5,8 +5,9 @@ pandas' type inference, decide whether a value is a valid date or number.
 The index is the 1-based line number in the CSV (header is line 1), so any
 violating row printed by a test can be found directly in the source file.
 
-Point the suite at another dataset with ``pytest --data-dir <dir>`` or the
-``LUMEN_DATA_DIR`` environment variable.
+Point the suite at another dataset with ``pytest --data-dir=<dir>`` or the
+``LUMEN_DATA_DIR`` environment variable. Data-contract settings
+(``validation_time``, ``contract_baseline_ref``) live in pytest.ini.
 """
 
 from __future__ import annotations
@@ -28,6 +29,10 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=os.environ.get("LUMEN_DATA_DIR", str(DEFAULT_DATA_DIR)),
         help="directory containing the core-banking CSVs (default: data/synthetic)",
     )
+    parser.addini("validation_time", "ISO time freshness is measured at; empty means now", default="")
+    parser.addini("contract_baseline_ref", "git ref holding the contract in force", default="origin/main")
+    parser.addoption("--validation-time", help="override the validation_time ini setting")
+    parser.addoption("--contract-baseline-ref", help="override the contract_baseline_ref ini setting")
 
 
 def load_table(data_dir: Path, name: str) -> pd.DataFrame:

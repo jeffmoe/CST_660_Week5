@@ -55,6 +55,7 @@ given as two separate arguments, pytest mistakes the directory for a test path.
 | `test_referential_integrity.py` | `accounts.branch_code → branch_reference`, plus `accounts.customer_id → customers`, `customers.home_branch_code → branch_reference`, `daily_balances.account_id → accounts` |
 | `test_join_cardinality.py` | Row-count assertion: joining `accounts` to `branch_reference` (left and inner) must return exactly one row per account |
 | `test_business_rules.py` | No account's ledger balance moves more than 300% day over day. Accounts opened or closed inside the window are excluded (lifecycle funding and run-off legitimately exceed 300%), and only days with a prior-day balance of at least $1,000 are evaluated, since percent change against a near-zero balance is meaningless |
+| `test_contract.py` | Runs the [data contract](#data-contract): the contract file is well formed, the payload satisfies every clause, and any edit to the contract follows the breaking-change policy relative to the version on `origin/main` |
 
 Each failure is reported by one test only: schemas leave columns nullable so
 nulls fail only the not-null tests, and foreign-key tests skip null keys.
@@ -79,8 +80,7 @@ csv_line
 
 ### Expected results
 
-Against the committed defective dataset, 8 of 40 tests fail, one for each kind of
-injected defect:
+Against the committed defective dataset, 9 of 43 tests fail and 1 is skipped:
 
 | Failing test | Injected defect |
 |---|---|
@@ -92,8 +92,11 @@ injected defect:
 | `test_schema_and_data_types[accounts]` | Malformed branch code `BR7` |
 | `test_required_column_not_null[accounts.customer_id]` | 4 null customer IDs |
 | `test_daily_balance_change_within_300_percent` | Decimal-shift spike: one balance posted ×100 for a day (+9,900%) |
+| `test_payload_satisfies_contract` | Null customer IDs, `BR7`, duplicate account IDs, and the spike breaking the $750,000 balance ceiling (5 contract clauses) |
 
-Against a `--clean` dataset all 40 pass. The largest day-over-day move there
+`test_contract_change_follows_policy` is skipped until the contract exists on
+`origin/main`; from then on it checks every contract edit against that version.
+Against a `--clean` dataset all 42 runnable tests pass. The largest day-over-day move there
 is about 250%, so the 300% threshold has headroom.
 
 ## Data contract
@@ -128,6 +131,23 @@ the baseline's policy (anything not explicitly non-breaking counts as breaking),
 and enforces the version bump and notification window. `--now` pins the
 validation time; without it the freshness SLA is measured against the current
 time, so the static synthetic data will always be stale.
+
+### In the pytest run
+
+`tests/test_contract.py` runs the validator inside the test suite, so the
+contract is enforced by the same gate as the other checks. Two settings in
+`pytest.ini` control it, and each can be overridden on the command line:
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `validation_time` / `--validation-time=` | `2026-10-01T06:00` | Time freshness is measured at. Pinned because the synthetic data is static; set it empty for a live feed |
+| `contract_baseline_ref` / `--contract-baseline-ref=` | `origin/main` | Git ref holding the contract in force. If the working-tree contract differs from it, the change must follow the breaking-change policy |
+
+For example, bumping the contract to v1.1.0 and adding a `DORMANT` status with
+three days' notice fails `test_contract_change_follows_policy`: adding an enum
+value is breaking, so it needs v2.0.0 and 30 days' notice.
+
+### Exit codes
 
 Exit codes: `0` all clauses pass, `1` any violation, `2` the contract is invalid
 or the payload directory is missing.

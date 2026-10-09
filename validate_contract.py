@@ -481,6 +481,12 @@ def check_change_policy(baseline: Contract | None, contract: Contract, today: da
 
 # --------------------------------------------------------------------------- #
 
+def resolve_now(value: str | None, tz: ZoneInfo) -> datetime:
+    """Validation time in tz: ISO value if given (naive means tz), else the current time."""
+    now = datetime.fromisoformat(value) if value else datetime.now(tz)
+    return (now if now.tzinfo else now.replace(tzinfo=tz)).astimezone(tz)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Validate a data payload against a data contract.")
     ap.add_argument("contract", type=Path, help="contract YAML file")
@@ -501,13 +507,11 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_UNUSABLE
 
     tz = ZoneInfo(contract.sla.freshness.timezone)
-    now = datetime.fromisoformat(args.now) if args.now else datetime.now(tz)
-    if now.tzinfo is None:
-        now = now.replace(tzinfo=tz)
+    now = resolve_now(args.now, tz)
 
     meta, owner = contract.contract, contract.owner
     print(f"Contract {meta.id} v{meta.version} ({meta.status}), owner {owner.team}")
-    print(f"Payload  {args.payload}   validated at {now.astimezone(tz):%Y-%m-%d %H:%M %Z}\n")
+    print(f"Payload  {args.payload}   validated at {now:%Y-%m-%d %H:%M %Z}\n")
 
     report = Report(args.max_rows)
     frames = {}
@@ -516,7 +520,7 @@ def main(argv: list[str] | None = None) -> int:
         if df is not None:
             frames[ds.name] = df
     check_freshness(contract, frames, now, report)
-    check_change_policy(baseline, contract, now.astimezone(tz).date(), report)
+    check_change_policy(baseline, contract, now.date(), report)
     report.print()
 
     failed = report.failures
