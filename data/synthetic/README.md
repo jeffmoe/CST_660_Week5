@@ -9,7 +9,7 @@ lists exact row counts and every injected defect by ID.
 | `branch_reference.csv` | one row per branch (intended) | 43 | `branch_code` |
 | `customers.csv` | one row per customer | 1,450 | `customer_id` |
 | `accounts.csv` | one row per account (intended) | 2,003 | `account_id` |
-| `daily_balances.csv` | one row per account per day while open | 173,901 | `account_id`, `balance_date` |
+| `daily_balances.csv` | one row per account per day while open | 173,313 | `account_id`, `balance_date` |
 
 Relationships: `accounts.customer_id → customers.customer_id`,
 `accounts.branch_code → branch_reference.branch_code`,
@@ -28,8 +28,8 @@ These are deliberate. They are the failure classes the quality gates must catch.
 | Duplicate `branch_code` key: `BR017` appears twice (region re-org row never retired) | branch_reference | 1 extra row |
 
 The `BR017` duplicate reproduces last quarter's incident: joining balances to
-`branch_reference` on `branch_code` doubles every BR017 account (56 rows), which
-inflates 2026-09-30 total deposits by about $1.38M (~3.9%). No row is lost and
+`branch_reference` on `branch_code` doubles every BR017 account (55 rows), which
+inflates 2026-09-30 total deposits by about $1.34M (~3.8%). No row is lost and
 nothing errors, so the overstatement is silent.
 
 Everything else is clean: `daily_balances` has no orphan accounts and no duplicate

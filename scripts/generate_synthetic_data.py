@@ -94,12 +94,17 @@ def build_branches(rng: np.random.Generator) -> pd.DataFrame:
 
 
 def build_customers(rng: np.random.Generator, fake: Faker, n_branches: int) -> pd.DataFrame:
+    dob = random_dates(rng, "1940-01-01", "2004-12-31", N_CUSTOMERS)
+    # Relationships start no earlier than 1995 and no earlier than the customer's 18th birthday.
+    earliest = pd.Series(dob + pd.DateOffset(years=18)).clip(lower=pd.Timestamp("1995-01-01"))
+    latest = AS_OF - pd.Timedelta(days=30)
+    since = earliest + pd.to_timedelta(rng.integers(0, (latest - earliest).dt.days.to_numpy() + 1), unit="D")
     return pd.DataFrame({
         "customer_id": [f"C{i:07d}" for i in range(1, N_CUSTOMERS + 1)],
         "first_name": [fake.first_name() for _ in range(N_CUSTOMERS)],
         "last_name": [fake.last_name() for _ in range(N_CUSTOMERS)],
-        "date_of_birth": random_dates(rng, "1940-01-01", "2004-12-31", N_CUSTOMERS),
-        "customer_since": random_dates(rng, "1995-01-01", AS_OF - pd.Timedelta(days=30), N_CUSTOMERS),
+        "date_of_birth": dob,
+        "customer_since": since,
         "segment": rng.choice(["RETAIL", "SMALL_BUSINESS", "PRIVATE"], size=N_CUSTOMERS, p=[0.86, 0.11, 0.03]),
         "home_branch_code": branch_codes(rng.integers(1, n_branches + 1, size=N_CUSTOMERS)),
     })
