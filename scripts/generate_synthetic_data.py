@@ -140,6 +140,12 @@ def build_accounts(rng: np.random.Generator, customers: pd.DataFrame) -> pd.Data
     closes = (rng.random(n) < 0.02) & (close_candidate <= AS_OF)
     close_date = close_candidate.where(closes)
 
+    # ~4% of long-standing open accounts have had no customer-initiated activity
+    # for 12+ months; core banking now flags these as dormant. Drawn from a
+    # child generator so the rest of the dataset is unchanged.
+    dormancy_rng = rng.spawn(1)[0]
+    dormant = ~closes & (opened < WINDOW_START - pd.DateOffset(years=3)) & (dormancy_rng.random(n) < 0.04)
+
     # Accounts are usually held at the customer's home branch.
     other_branch = branch_codes(rng.integers(1, len(BRANCHES) + 1, size=n))
     branch = np.where(rng.random(n) < 0.85, owners["home_branch_code"], other_branch)
@@ -151,7 +157,7 @@ def build_accounts(rng: np.random.Generator, customers: pd.DataFrame) -> pd.Data
         "product_type": product,
         "open_date": opened,
         "close_date": close_date,
-        "status": np.where(closes, "CLOSED", "OPEN"),
+        "status": np.select([closes, dormant], ["CLOSED", "DORMANT"], default="OPEN"),
         "interest_rate": np.round(rng.uniform(lo, hi), 4),
     })
 
