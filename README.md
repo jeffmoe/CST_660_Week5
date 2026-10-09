@@ -1,4 +1,6 @@
 # CST_660_Week5
+[![Data quality gate](https://github.com/jeffmoe/CST_660_Week5/actions/workflows/quality-gate.yml/badge.svg?branch=main)](https://github.com/jeffmoe/CST_660_Week5/actions/workflows/quality-gate.yml)
+
 Quality Gates, Tests, Contracts, and a CI/CD Promotion Path
 
 Automated data-quality controls for Lumen Community Bank's deposits reporting.
