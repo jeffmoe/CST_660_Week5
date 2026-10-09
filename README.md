@@ -14,6 +14,8 @@ before a change reaches production.
 | `scripts/generate_synthetic_data.py` | Seeded generator for the synthetic core-banking dataset |
 | `data/synthetic/` | Generated CSVs, `manifest.json` of injected defects, and a [data README](data/synthetic/README.md) |
 | `tests/` | pytest + pandera data-quality suite |
+| `contracts/accounts.yaml` | Producer-consumer data contract for the accounts table and its balance feed |
+| `validate_contract.py` | Validates a payload (and optionally a contract change) against a contract |
 | `requirements.txt` | Pinned dependencies |
 | `pytest.ini` | pytest configuration |
 
@@ -93,3 +95,45 @@ injected defect:
 
 Against a `--clean` dataset all 40 pass. The largest day-over-day move there
 is about 250%, so the 300% threshold has headroom.
+
+## Data contract
+
+`contracts/accounts.yaml` is the machine-readable agreement between the Core
+Banking Data Platform team (producer) and Finance Analytics and Branch
+Operations (consumers). It declares:
+
+| Clause | Content |
+|---|---|
+| Owner | Producing team, email, Slack channel, escalation address |
+| Consumers | Who depends on the data and for what |
+| Columns | Name, type (`string`, `date`, `decimal`, `integer`, `boolean`), nullability, and patterns for IDs and branch codes. `accounts` and its `daily_balances` feed each have a primary key and reject undeclared columns |
+| Allowed values | `status` in `OPEN`/`CLOSED`, `product_type` enum, `interest_rate` 0–10%, `ledger_balance` and `available_balance` between −$5,000 and $750,000 |
+| Freshness SLA | Newest `balance_date` no more than 30 hours past the end of that business day (America/Chicago), i.e. yesterday's balances by 06:00 |
+| Breaking-change policy | Semver; breaking changes (removing a column, changing a type, making a column nullable, adding or removing an enum value, widening a range, relaxing the SLA, ...) need a major version bump and a change-log notice at least 30 days before they take effect |
+
+The accounts table itself has no balance column, so the balance range applies
+to the `daily_balances` feed delivered with it, which is also what the
+freshness SLA measures.
+
+```
+python validate_contract.py contracts/accounts.yaml data/synthetic --now 2026-10-01T06:00
+python validate_contract.py NEW_CONTRACT.yaml PAYLOAD_DIR --baseline contracts/accounts.yaml
+```
+
+The validator checks that the contract is well formed (pydantic), then checks
+every clause against the payload and prints one `[PASS]`/`[FAIL]`/`[SKIP]` line
+per clause, with the violating rows (by CSV line) under each failure. With
+`--baseline`, it diffs the two contract versions, classifies each change using
+the baseline's policy (anything not explicitly non-breaking counts as breaking),
+and enforces the version bump and notification window. `--now` pins the
+validation time; without it the freshness SLA is measured against the current
+time, so the static synthetic data will always be stale.
+
+Exit codes: `0` all clauses pass, `1` any violation, `2` the contract is invalid
+or the payload directory is missing.
+
+Against the committed dataset at `--now 2026-10-01T06:00`, 5 of 42 clauses fail:
+4 null `customer_id` values, the malformed `BR7` branch code, 3 duplicated
+account IDs, and the ×100 balance spike, which breaks the $750,000 ceiling on
+both `ledger_balance` and `available_balance`. A `--clean` dataset satisfies the
+contract.

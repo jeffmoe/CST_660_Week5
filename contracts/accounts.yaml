@@ -1,0 +1,144 @@
+# Producer-consumer data contract: core-banking accounts.
+#
+# Machine-readable: validate_contract.py enforces every clause below against a
+# delivered payload, and against a previous contract version for change policy.
+#   python validate_contract.py contracts/accounts.yaml data/synthetic
+#
+# The accounts table carries no balance, so the balance-range clause applies to
+# the account balance feed (daily_balances) that ships with it in the same
+# delivery. That feed is also what the freshness SLA is measured on.
+
+contract:
+  id: lumen.core_banking.accounts
+  version: 1.0.0
+  status: active                     # draft | active | deprecated
+  effective_on: 2026-10-01
+  description: >
+    One row per deposit account held at Lumen Community Bank, plus the daily
+    ledger and available balance for every account open on each business date.
+    Source of record for deposits reporting, including the CFO weekly deposits
+    packet.
+
+owner:
+  team: Core Banking Data Platform
+  role: producer
+  email: core-banking-data@lumenbank.example
+  slack: "#core-banking-data"
+  escalation: core-banking-data-oncall@lumenbank.example
+
+consumers:
+  - team: Finance Analytics
+    use: CFO weekly deposits packet; average customer balance by branch and region
+    email: finance-analytics@lumenbank.example
+  - team: Branch Operations
+    use: Branch manager balance reconciliation
+    email: branch-ops-reporting@lumenbank.example
+
+datasets:
+  - name: accounts
+    file: accounts.csv
+    primary_key: [account_id]
+    allow_undeclared_columns: false
+    columns:
+      - name: account_id
+        type: string
+        nullable: false
+        pattern: '^LCB\d{8}$'
+        description: Account number, unique per account.
+      - name: customer_id
+        type: string
+        nullable: false
+        pattern: '^C\d{7}$'
+        description: Primary account holder.
+      - name: branch_code
+        type: string
+        nullable: false
+        pattern: '^BR\d{3}$'
+        description: Branch of record; joins to branch_reference.branch_code.
+      - name: product_type
+        type: string
+        nullable: false
+        allowed_values: [CHECKING, SAVINGS, MONEY_MARKET, CD]
+      - name: open_date
+        type: date
+        nullable: false
+      - name: close_date
+        type: date
+        nullable: true
+        description: Null while the account is open.
+      - name: status
+        type: string
+        nullable: false
+        allowed_values: [OPEN, CLOSED]
+      - name: interest_rate
+        type: decimal
+        nullable: false
+        range: {min: 0.0, max: 0.10}
+        description: Annual rate as a fraction (0.0450 = 4.50%).
+
+  - name: daily_balances
+    file: daily_balances.csv
+    primary_key: [account_id, balance_date]
+    allow_undeclared_columns: false
+    columns:
+      - name: account_id
+        type: string
+        nullable: false
+        pattern: '^LCB\d{8}$'
+      - name: balance_date
+        type: date
+        nullable: false
+        description: Business date the end-of-day balance applies to.
+      - name: ledger_balance
+        type: decimal
+        nullable: false
+        # Overdraft lines are capped at $5,000. Any single-account balance above
+        # $750,000 must be reviewed by Treasury before it is published.
+        range: {min: -5000.00, max: 750000.00}
+      - name: available_balance
+        type: decimal
+        nullable: false
+        range: {min: -5000.00, max: 750000.00}
+
+sla:
+  freshness:
+    # Balances for business date D are delivered by 06:00 Central on D+1.
+    # Age is measured from the end of the newest business date in the payload,
+    # so at 06:00 on D+1 the age of D-1 data is exactly 30 hours.
+    dataset: daily_balances
+    column: balance_date
+    max_age_hours: 30
+    timezone: America/Chicago
+
+change_policy:
+  versioning: semver
+  # Breaking changes need a major version bump and must be announced to every
+  # consumer at least this many days before they take effect.
+  notification_window_days: 30
+  notify: [consumers]
+  breaking_changes:
+    - remove_dataset
+    - remove_column                  # a rename shows up as remove + add
+    - change_column_type
+    - change_column_pattern
+    - make_column_nullable
+    - change_primary_key
+    - remove_allowed_value
+    - add_allowed_value              # consumers map enums explicitly
+    - widen_range
+    - relax_freshness_sla
+    - allow_undeclared_columns
+  non_breaking_changes:
+    - add_dataset
+    - add_column
+    - make_column_required
+    - narrow_range
+    - tighten_freshness_sla
+  # Announced changes. A breaking change between two contract versions is only
+  # accepted when the newer version is listed here with enough notice.
+  change_log:
+    - version: 1.0.0
+      announced_on: 2026-09-01
+      effective_on: 2026-10-01
+      breaking: false
+      summary: Initial contract.
