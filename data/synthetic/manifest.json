@@ -1,0 +1,72 @@
+{
+  "seed": 660,
+  "as_of_date": "2026-09-30",
+  "window_start": "2026-07-03",
+  "days": 90,
+  "row_counts": {
+    "branch_reference": 43,
+    "customers": 1450,
+    "accounts": 2003,
+    "daily_balances": 175156
+  },
+  "injected_defects": {
+    "branch_reference_duplicate_key": {
+      "branch_code": "BR017",
+      "row_count_for_key": 2,
+      "description": "Second branch_reference row for BR017 (region re-org) without retiring the original; joins on branch_code double these accounts.",
+      "account_rows_affected_by_fanout": 46
+    },
+    "orphan_branch_codes": {
+      "count": 5,
+      "rows": [
+        {
+          "account_id": "LCB00001803",
+          "branch_code": "BR043"
+        },
+        {
+          "account_id": "LCB00001520",
+          "branch_code": "BR099"
+        },
+        {
+          "account_id": "LCB00000464",
+          "branch_code": "BR000"
+        },
+        {
+          "account_id": "LCB00000603",
+          "branch_code": "BR043"
+        },
+        {
+          "account_id": "LCB00001250",
+          "branch_code": "BR7"
+        }
+      ]
+    },
+    "null_customer_ids": {
+      "count": 4,
+      "account_ids": [
+        "LCB00001638",
+        "LCB00001504",
+        "LCB00001154",
+        "LCB00001573"
+      ]
+    },
+    "duplicate_account_ids": {
+      "distinct_ids_duplicated": 3,
+      "extra_rows": 3,
+      "rows": [
+        {
+          "account_id": "LCB00001142",
+          "kind": "exact_duplicate_row"
+        },
+        {
+          "account_id": "LCB00001401",
+          "kind": "conflicting_attributes"
+        },
+        {
+          "account_id": "LCB00000844",
+          "kind": "conflicting_attributes"
+        }
+      ]
+    }
+  }
+}
