@@ -184,3 +184,117 @@ A failing job only blocks a merge once branch protection requires it. In
 **Quality gate (tests + contract)** and **Gate self-test (defective data must
 fail)**. The `staging` environment is created on the first promotion; add
 required reviewers there to make promotion a manual approval.
+
+## Rollback runbook
+
+Two recovery paths: **restore** the previously published dataset (fast; stops
+consumer impact) and **revert** the bad change on `main` (slower; removes the
+cause). They are complementary, not alternatives: a restore without a revert is
+undone by the next merge, because `promote` republishes whatever `main` builds.
+
+**Published version.** Each successful merge to `main` publishes a GitHub
+pre-release tagged `v<contract version>-build.<run number>` with the bundle
+`<tag>.tar.gz` (data, test and contract reports, contract, validator,
+`RELEASE.json`, `SHA256SUMS`). The current staging dataset is the **newest
+non-draft `v*-build.*` release**; consumers and the staging directory take that
+one. Tags are never deleted or reused, so every published version stays
+recoverable.
+
+### Which path to use
+
+| Situation | Path | Then |
+|---|---|---|
+| A published dataset is wrong and consumers may already be reading it (e.g. a number in the deposits packet does not reconcile) | **A. Restore** now | **B. Revert** to remove the cause |
+| A bad change is on `main` but `promote` failed or did not run, so nothing bad was published | **B. Revert** only | — |
+| A bad change is on `main` and was published, but no consumer reads staging until the fix lands | **B. Revert** only; the revert's own promotion replaces the dataset | — |
+| The bad change edited `contracts/accounts.yaml` | **A. Restore** if the data is affected, then **C. Contract roll-forward** (a plain revert fails the gate) | — |
+| Unsure | **A. Restore** — it is fast, needs no CI, and is itself reversible | Decide on B or C once consumers are protected |
+
+Find the bad and last-good versions first:
+
+```
+gh release list --limit 10                     # newest first; note the bad tag and the one before it
+gh release view <tag> --json body,targetCommitish
+git log --oneline origin/main -10              # commit(s) that came in with the bad release
+```
+
+`RELEASE.json` in each bundle records the commit it was built from and the gate
+run that approved it.
+
+### A. Restore the previous published dataset
+
+Expected time to recovery: **about 5–10 minutes**, all hands-on. No CI run is
+involved.
+
+1. **Withdraw the bad release.** Turning it into a draft hides it from
+   consumers while keeping the tag and bundle for the incident record:
+   ```
+   gh release edit <bad-tag> --draft=true
+   ```
+   The newest non-draft release is now the last good one. (Web UI: Releases →
+   the bad release → Edit → *Save as draft*.)
+2. **Restore the staging directory** from the last good bundle and verify it
+   byte for byte:
+   ```
+   gh release download <good-tag> --pattern '*.tar.gz' --dir restore
+   tar -xzf restore/<good-tag>.tar.gz -C restore
+   (cd restore/<good-tag> && sha256sum -c SHA256SUMS)    # every line must say OK
+   ```
+   Copy `restore/<good-tag>/` into the staging location. The `staging-<tag>`
+   workflow artifact holds the same files but expires after 90 days; the
+   release asset does not.
+3. **Confirm** the restored data still meets the contract:
+   ```
+   python validate_contract.py restore/<good-tag>/accounts.yaml restore/<good-tag>/data --now <its balance date + 1 day>T06:00
+   ```
+4. **Notify** the consumers listed in `contracts/accounts.yaml` (Finance
+   Analytics, Branch Operations) and the owner channel: which version was
+   withdrawn, which is live, and when the bad one was first published, so
+   reports built in between can be rerun.
+
+Undo a restore by editing the draft back to published
+(`gh release edit <bad-tag> --draft=false`).
+
+### B. Revert the bad change on `main`
+
+Expected time to recovery: **about 15–30 minutes**. The workflow itself takes
+about a minute per run (the first merge run took 49 s end to end: gate 23 s,
+self-test 23 s in parallel, promote 14 s), and a revert needs two runs, one on
+the PR and one on the merge. Most of the time is review and approval, plus
+staging-environment approval if required reviewers are configured.
+
+1. Branch from `main` and revert. Merges into this repo have been fast-forward,
+   so revert the commits themselves, newest first:
+   ```
+   git fetch origin
+   git checkout -b revert/<short-name> origin/main
+   git revert --no-edit <oldest-bad-sha>^..<newest-bad-sha>   # fast-forward or squash merge
+   git revert --no-edit -m 1 <merge-sha>                      # if it came in as a merge commit
+   git push -u origin revert/<short-name>
+   ```
+2. Open a PR to `main`. Both required checks must pass; a revert gets no
+   exemption from the gate.
+3. Merge. `promote` publishes a **new** tag (`build.<next run number>`) built
+   from the reverted code. That release becomes the newest non-draft release and
+   supersedes any restore from path A, so check that it validates before
+   standing down.
+4. Leave the bad tag in place (as a draft if path A ran). Do not delete tags:
+   `promote` refuses to overwrite one, and the history is the audit trail.
+
+### C. Contract changes: roll forward instead of reverting
+
+`test_contract_change_follows_policy` compares the PR's contract with the one on
+`main`. Reverting a contract edit takes the version backwards (e.g. v2.0.0 to
+v1.0.0), which fails the version-bump check, so a plain `git revert` of a
+contract change is blocked by the gate. Instead:
+
+1. Restore the previous clauses by hand, **bump the version above the bad one**,
+   and add a `change_log` entry for it.
+2. If restoring the old clauses is non-breaking under the policy (for example,
+   making a column required again, or narrowing a range), use a minor or patch
+   bump. It passes the gate and follows the timeline in path B.
+3. If it is breaking (for example, removing a column or an allowed value that
+   the bad version added), the policy requires a new major version and 30 days'
+   notice. The policy has no emergency exemption. Use path A to protect
+   consumers in the meantime, and agree the change with the consumers named in
+   the contract before shipping it.
