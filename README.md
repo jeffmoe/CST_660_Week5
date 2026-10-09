@@ -298,3 +298,114 @@ contract change is blocked by the gate. Instead:
    notice. The policy has no emergency exemption. Use path A to protect
    consumers in the meantime, and agree the change with the consumers named in
    the contract before shipping it.
+
+## Walkthrough: the gate blocking a contract-breaking PR
+
+[PR #1](https://github.com/jeffmoe/CST_660_Week5/pull/1) shows the gate
+blocking a change for real, and then letting the corrected change through.
+
+### The breaking change
+
+Commit `0df4917` taught the producer (`scripts/generate_synthetic_data.py`) to
+report long-standing open accounts with no customer activity for 12+ months as
+`status = DORMANT`. The contract allows only `OPEN` and `CLOSED`. 46 of the 2,000
+accounts in the clean dataset became `DORMANT`; nothing else in the data
+changed. (The dormancy flag is drawn from a child random generator so the rest
+of the dataset stays identical and only the status change is under test.)
+
+### What CI reported
+
+[Run 37951625862](https://github.com/jeffmoe/CST_660_Week5/actions/runs/37951625862):
+
+| Job / step | Result |
+|---|---|
+| Quality gate → Generate synthetic data | passed |
+| Quality gate → **Run pytest suite** | **failed** (exit code 1) |
+| Quality gate → Run contract validator | skipped: an earlier step failed, so the job stopped |
+| Quality gate → Upload build artifacts | passed (`if: always()`, so the reports are available) |
+| Gate self-test | passed: defective data still fails as it should |
+| Promote | skipped: only runs on a merge to `main` |
+
+Two of the 43 tests failed. Each is read below.
+
+**1. `test_schema_and_data_types[accounts]`**
+
+```
+E   AssertionError: accounts: 92 schema/data-type violation(s)
+FAIL  accounts schema: 92 violating row(s)
+          column                            check bad_value   account_id ... close_date   status
+csv_line
+2          (row)  close_date_set_only_when_closed      None  LCB00000001 ...        NaN  DORMANT
+2         status         isin(['OPEN', 'CLOSED'])   DORMANT  LCB00000001 ...        NaN  DORMANT
+```
+
+- **What it says:** two pandera rules fail on each of the 46 `DORMANT` rows (92
+  violations). `isin(['OPEN', 'CLOSED'])` is the domain check: `DORMANT` is not
+  a known status. `close_date_set_only_when_closed` is the cross-column rule
+  "`close_date` is null exactly when the account is `OPEN`": a `DORMANT`
+  account has no close date but is not `OPEN`, so the table no longer has a
+  consistent definition of an open account.
+- **Code or data defect:** a **code defect** in this PR. The producer code
+  started emitting a value its published contract does not allow; the source
+  accounts did not change. (The same failure with no code change in the PR
+  would mean an **upstream data defect**: core banking began sending `DORMANT`
+  on its own. The check output looks the same; the PR diff tells you which.)
+- **Minimal correct fix:** stop emitting `DORMANT`. Not: add `DORMANT` to
+  `STATUSES` in `tests/schemas.py`. That would silence the test without
+  telling any consumer.
+
+**2. `test_payload_satisfies_contract`**
+
+```
+E   AssertionError: validate_contract.py exited 1: payload violates accounts.yaml
+[FAIL] accounts.status: in ['OPEN', 'CLOSED'] -- 46 row(s) hold a value outside the allowed set
+42 clauses: 40 passed, 1 failed, 1 skipped
+CONTRACT VIOLATED: 1 clause(s) failed. Producer contact: Core Banking Data Platform <core-banking-data@lumenbank.example>, #core-banking-data
+```
+
+- **What it says:** the producer-consumer contract itself is broken: 46
+  delivered rows carry a status outside the agreed set. The report names the
+  owner to contact. (The contract has no close-date rule, so this check flags
+  each row once, against the `status` clause.)
+- **Code or data defect:** the same **code defect**, seen from the consumer's
+  side.
+- **Minimal correct fix:** the same one. Do not loosen the contract by adding
+  `DORMANT` to `allowed_values`:
+  - **It would mislead consumers.** The CFO packet and branch reconciliations
+    treat `status = OPEN` as "live deposit account". Dormant accounts would
+    silently drop out of open-account counts and average balances. That is
+    the same silent misstatement as the fan-out incident, in the other
+    direction.
+  - **The gate would block it anyway.** Adding an allowed value is listed as
+    breaking in `change_policy`, so `test_contract_change_follows_policy`
+    fails unless the contract goes to v2.0.0 with 30 days' notice to Finance
+    Analytics and Branch Operations.
+
+### The fix
+
+The fix commit restores the producer to emitting only `OPEN` and `CLOSED`.
+Legally a dormant account is still open, so `OPEN` is the correct value under
+the current contract. The PR then contains only this README section, and both
+checks pass.
+
+If the business does need dormancy, ship it as a versioned contract change
+rather than by repurposing `status`:
+- **Preferred:** add a nullable `is_dormant` boolean column. `add_column` is
+  non-breaking under the policy, so it is a v1.1.0 with a change-log entry, and
+  no consumer's `status` logic changes.
+- **Only if consumers agree:** add `DORMANT` to `status` as v2.0.0, announced at
+  least 30 days ahead, after Finance Analytics confirms how dormant balances
+  should be counted.
+
+### How to read any failing gate
+
+1. Open the failed step's log. The `short test summary info` block at the end
+   lists the failing tests. Each test's *Captured stdout call* section prints
+   the violating rows by `csv_line`.
+2. **Check the PR diff.** If it touches the producer (`scripts/`), the
+   contract, or the checks, the failure is a code defect in the PR. If it
+   doesn't, and the failure appears on new data, it is an upstream data defect:
+   do not merge "fixes" to the checks; contact the owner named in the report.
+3. **Fix the cause, not the check.** Change a check or the contract only when
+   the rule itself was wrong. Any contract change goes through the change
+   policy: version bump, change-log entry, and notice for breaking changes.
