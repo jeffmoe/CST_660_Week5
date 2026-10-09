@@ -1,44 +1,44 @@
 branch_code,branch_name,city,state,region,opened_date,is_active
-BR001,Lumen Des Moines,Des Moines,IA,Central,1969-06-12,true
-BR002,Lumen Ames,Ames,IA,Central,2002-01-12,true
-BR003,Lumen Ankeny,Ankeny,IA,Central,1990-08-12,true
-BR004,Lumen West Des Moines,West Des Moines,IA,Central,1975-04-22,true
-BR005,Lumen Cedar Rapids,Cedar Rapids,IA,East,1982-02-20,true
-BR006,Lumen Iowa City,Iowa City,IA,East,1980-07-22,true
-BR007,Lumen Davenport,Davenport,IA,East,1977-11-07,true
-BR008,Lumen Dubuque,Dubuque,IA,East,2017-03-31,true
-BR009,Lumen Waterloo,Waterloo,IA,North,1991-02-17,true
-BR010,Lumen Mason City,Mason City,IA,North,2001-08-28,true
-BR011,Lumen Sioux City,Sioux City,IA,West,1970-05-10,true
-BR012,Lumen Council Bluffs,Council Bluffs,IA,West,2010-04-25,true
-BR013,Lumen Omaha,Omaha,NE,West,2016-06-16,true
-BR014,Lumen Lincoln,Lincoln,NE,West,2019-01-01,true
-BR015,Lumen Grand Island,Grand Island,NE,West,2017-01-22,true
-BR016,Lumen Kearney,Kearney,NE,West,1977-09-26,true
-BR017,Lumen Minneapolis,Minneapolis,MN,North,1977-01-27,true
-BR017,Lumen Minneapolis (Metro),Minneapolis,MN,Central,1977-01-27,true
-BR018,Lumen St. Paul,St. Paul,MN,North,1984-02-13,true
-BR019,Lumen Rochester,Rochester,MN,North,1974-04-15,true
-BR020,Lumen Mankato,Mankato,MN,North,1990-08-01,true
-BR021,Lumen St. Cloud,St. Cloud,MN,North,1982-03-09,true
-BR022,Lumen Madison,Madison,WI,East,1969-01-21,true
-BR023,Lumen La Crosse,La Crosse,WI,East,1996-06-16,true
-BR024,Lumen Eau Claire,Eau Claire,WI,North,2001-06-05,true
-BR025,Lumen Green Bay,Green Bay,WI,East,2011-03-13,true
-BR026,Lumen Rockford,Rockford,IL,East,1999-02-13,true
-BR027,Lumen Peoria,Peoria,IL,East,2017-08-16,true
-BR028,Lumen Moline,Moline,IL,East,1997-12-30,true
-BR029,Lumen Springfield IL,Springfield,IL,South,1998-05-22,true
-BR030,Lumen Champaign,Champaign,IL,South,1971-09-17,true
-BR031,Lumen Bloomington,Bloomington,IL,South,2011-06-07,true
-BR032,Lumen Kansas City,Kansas City,MO,South,1981-11-10,true
-BR033,Lumen Columbia,Columbia,MO,South,2002-10-29,true
-BR034,Lumen St. Joseph,St. Joseph,MO,South,1992-02-16,true
-BR035,Lumen Springfield MO,Springfield,MO,South,1988-11-22,true
-BR036,Lumen Topeka,Topeka,KS,South,1982-04-23,true
-BR037,Lumen Lawrence,Lawrence,KS,South,1990-12-16,true
-BR038,Lumen Manhattan,Manhattan,KS,South,1984-08-22,true
-BR039,Lumen Sioux Falls,Sioux Falls,SD,West,2011-03-17,true
-BR040,Lumen Fargo,Fargo,ND,North,2013-05-23,true
-BR041,Lumen Bismarck,Bismarck,ND,North,1994-04-13,true
-BR042,Lumen Grand Forks,Grand Forks,ND,North,2021-04-28,true
+BR001,Lumen Des Moines,Des Moines,IA,Central,1990-11-02,True
+BR002,Lumen Ames,Ames,IA,Central,1990-09-24,True
+BR003,Lumen Ankeny,Ankeny,IA,Central,1991-11-19,True
+BR004,Lumen West Des Moines,West Des Moines,IA,Central,2016-02-12,True
+BR005,Lumen Cedar Rapids,Cedar Rapids,IA,East,2011-10-12,True
+BR006,Lumen Iowa City,Iowa City,IA,East,1992-05-24,True
+BR007,Lumen Davenport,Davenport,IA,East,1977-11-25,True
+BR008,Lumen Dubuque,Dubuque,IA,East,1999-10-12,True
+BR009,Lumen Waterloo,Waterloo,IA,North,2001-07-02,True
+BR010,Lumen Mason City,Mason City,IA,North,1992-01-29,True
+BR011,Lumen Sioux City,Sioux City,IA,West,2018-07-28,True
+BR012,Lumen Council Bluffs,Council Bluffs,IA,West,1997-08-31,True
+BR013,Lumen Omaha,Omaha,NE,West,2006-07-01,True
+BR014,Lumen Lincoln,Lincoln,NE,West,1993-06-04,True
+BR015,Lumen Grand Island,Grand Island,NE,West,1995-10-08,True
+BR016,Lumen Kearney,Kearney,NE,West,2011-04-08,True
+BR017,Lumen Minneapolis,Minneapolis,MN,North,1996-09-21,True
+BR017,Lumen Minneapolis (Metro),Minneapolis,MN,Central,1996-09-21,True
+BR018,Lumen St. Paul,St. Paul,MN,North,2009-01-14,True
+BR019,Lumen Rochester,Rochester,MN,North,1985-06-21,True
+BR020,Lumen Mankato,Mankato,MN,North,2018-11-30,True
+BR021,Lumen St. Cloud,St. Cloud,MN,North,2006-03-09,True
+BR022,Lumen Madison,Madison,WI,East,2017-11-23,True
+BR023,Lumen La Crosse,La Crosse,WI,East,1995-06-03,True
+BR024,Lumen Eau Claire,Eau Claire,WI,North,1975-04-12,True
+BR025,Lumen Green Bay,Green Bay,WI,East,1987-05-27,True
+BR026,Lumen Rockford,Rockford,IL,East,1989-04-29,True
+BR027,Lumen Peoria,Peoria,IL,East,1983-02-03,True
+BR028,Lumen Moline,Moline,IL,East,1978-04-02,True
+BR029,Lumen Springfield IL,Springfield,IL,South,2022-12-22,True
+BR030,Lumen Champaign,Champaign,IL,South,1990-11-19,True
+BR031,Lumen Bloomington,Bloomington,IL,South,1988-03-31,True
+BR032,Lumen Kansas City,Kansas City,MO,South,2007-06-04,True
+BR033,Lumen Columbia,Columbia,MO,South,2019-07-07,True
+BR034,Lumen St. Joseph,St. Joseph,MO,South,2009-02-03,True
+BR035,Lumen Springfield MO,Springfield,MO,South,2017-09-15,True
+BR036,Lumen Topeka,Topeka,KS,South,2013-05-12,True
+BR037,Lumen Lawrence,Lawrence,KS,South,2010-02-14,True
+BR038,Lumen Manhattan,Manhattan,KS,South,2008-10-05,True
+BR039,Lumen Sioux Falls,Sioux Falls,SD,West,1970-10-17,True
+BR040,Lumen Fargo,Fargo,ND,North,1986-05-31,True
+BR041,Lumen Bismarck,Bismarck,ND,North,2001-03-26,True
+BR042,Lumen Grand Forks,Grand Forks,ND,North,1977-12-26,True

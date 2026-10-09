@@ -7,36 +7,36 @@
     "branch_reference": 43,
     "customers": 1450,
     "accounts": 2003,
-    "daily_balances": 175156
+    "daily_balances": 173901
   },
   "injected_defects": {
     "branch_reference_duplicate_key": {
       "branch_code": "BR017",
       "row_count_for_key": 2,
       "description": "Second branch_reference row for BR017 (region re-org) without retiring the original; joins on branch_code double these accounts.",
-      "account_rows_affected_by_fanout": 46
+      "account_rows_affected_by_fanout": 56
     },
     "orphan_branch_codes": {
       "count": 5,
       "rows": [
         {
-          "account_id": "LCB00001803",
+          "account_id": "LCB00000498",
           "branch_code": "BR043"
         },
         {
-          "account_id": "LCB00001520",
+          "account_id": "LCB00001470",
           "branch_code": "BR099"
         },
         {
-          "account_id": "LCB00000464",
+          "account_id": "LCB00000088",
           "branch_code": "BR000"
         },
         {
-          "account_id": "LCB00000603",
+          "account_id": "LCB00001670",
           "branch_code": "BR043"
         },
         {
-          "account_id": "LCB00001250",
+          "account_id": "LCB00000751",
           "branch_code": "BR7"
         }
       ]
@@ -44,10 +44,10 @@
     "null_customer_ids": {
       "count": 4,
       "account_ids": [
-        "LCB00001638",
-        "LCB00001504",
-        "LCB00001154",
-        "LCB00001573"
+        "LCB00000313",
+        "LCB00000210",
+        "LCB00001729",
+        "LCB00000069"
       ]
     },
     "duplicate_account_ids": {
@@ -55,15 +55,15 @@
       "extra_rows": 3,
       "rows": [
         {
-          "account_id": "LCB00001142",
+          "account_id": "LCB00001034",
           "kind": "exact_duplicate_row"
         },
         {
-          "account_id": "LCB00001401",
+          "account_id": "LCB00000935",
           "kind": "conflicting_attributes"
         },
         {
-          "account_id": "LCB00000844",
+          "account_id": "LCB00001404",
           "kind": "conflicting_attributes"
         }
       ]
