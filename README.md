@@ -30,8 +30,9 @@ pip install -r requirements.txt
 `python scripts/generate_synthetic_data.py` writes `branch_reference`, `customers`,
 `accounts` and 90 days of `daily_balances` (about 2,000 accounts across 42
 branches) to `data/synthetic/`. The dataset deliberately contains duplicate
-account IDs, orphan branch codes, null customer IDs, and a duplicated `BR017`
-row in `branch_reference` that fans out joins. Use `--clean` for a defect-free
+account IDs, orphan branch codes, null customer IDs, a duplicated `BR017`
+row in `branch_reference` that fans out joins, and one daily balance posted
+×100. Use `--clean` for a defect-free
 copy and `--out <dir>` to write elsewhere.
 
 ## Data-quality tests
@@ -51,6 +52,7 @@ given as two separate arguments, pytest mistakes the directory for a test path.
 | `test_not_null.py` | Not-null on every required column, one test per column |
 | `test_referential_integrity.py` | `accounts.branch_code → branch_reference`, plus `accounts.customer_id → customers`, `customers.home_branch_code → branch_reference`, `daily_balances.account_id → accounts` |
 | `test_join_cardinality.py` | Row-count assertion: joining `accounts` to `branch_reference` (left and inner) must return exactly one row per account |
+| `test_business_rules.py` | No account's ledger balance moves more than 300% day over day. Accounts opened or closed inside the window are excluded (lifecycle funding and run-off legitimately exceed 300%), and only days with a prior-day balance of at least $1,000 are evaluated, since percent change against a near-zero balance is meaningless |
 
 Each failure is reported by one test only: schemas leave columns nullable so
 nulls fail only the not-null tests, and foreign-key tests skip null keys.
@@ -60,8 +62,8 @@ the source CSV), and pytest shows that output under *Captured stdout call*. A
 join failure also prints the `branch_reference` rows that caused it, e.g.:
 
 ```
-accounts rows before join: 2003; after left join: 2058
-FAIL  accounts left-joined to branch_reference keeps one row per account: 55 violating row(s)
+accounts rows before join: 2003; after left join: 2060
+FAIL  accounts left-joined to branch_reference keeps one row per account: 57 violating row(s)
            account_id customer_id branch_code  product_type   open_date ... rows_after_join
 csv_line
 6         LCB00000005    C0000371       BR017  MONEY_MARKET  2023-12-14 ...               2
@@ -75,17 +77,19 @@ csv_line
 
 ### Expected results
 
-Against the committed defective dataset, 7 of 39 tests fail, one for each kind of
+Against the committed defective dataset, 8 of 40 tests fail, one for each kind of
 injected defect:
 
 | Failing test | Injected defect |
 |---|---|
 | `test_primary_key_is_unique[branch_reference]` | Duplicate `BR017` key |
-| `test_join_to_branch_reference_preserves_row_count[left]` | `BR017` fan-out (2003 → 2058 rows) |
-| `test_join_to_branch_reference_preserves_row_count[inner]` | `BR017` fan-out plus 5 orphan accounts dropped (2003 → 2053 rows) |
+| `test_join_to_branch_reference_preserves_row_count[left]` | `BR017` fan-out (2003 → 2060 rows) |
+| `test_join_to_branch_reference_preserves_row_count[inner]` | `BR017` fan-out plus 5 orphan accounts dropped (2003 → 2055 rows) |
 | `test_primary_key_is_unique[accounts]` | 3 duplicated account IDs |
 | `test_foreign_key_resolves[accounts.branch_code->branch_reference.branch_code]` | 5 orphan branch codes |
 | `test_schema_and_data_types[accounts]` | Malformed branch code `BR7` |
 | `test_required_column_not_null[accounts.customer_id]` | 4 null customer IDs |
+| `test_daily_balance_change_within_300_percent` | Decimal-shift spike: one balance posted ×100 for a day (+9,900%) |
 
-Against a `--clean` dataset all 39 pass.
+Against a `--clean` dataset all 40 pass. The largest day-over-day move there
+is about 250%, so the 300% threshold has headroom.
