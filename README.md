@@ -18,6 +18,7 @@ before a change reaches production.
 | `validate_contract.py` | Validates a payload (and optionally a contract change) against a contract |
 | `requirements.txt` | Pinned dependencies |
 | `.github/workflows/quality-gate.yml` | CI gate on pull requests to `main`; staging promotion and release tag on merge |
+| `.github/rulesets/protect-main.json` | Branch ruleset for `main`: PR required, both gate checks required |
 | `pytest.ini` | pytest configuration |
 
 ## Setup
@@ -177,13 +178,36 @@ prove the gate still catches the failure classes it exists for.
 `VALIDATION_TIME` (workflow `env`) pins the freshness check to
 `2026-10-01T06:00`, the same as `pytest.ini`.
 
-### Repository settings needed
+### Branch protection (ruleset)
 
-A failing job only blocks a merge once branch protection requires it. In
-**Settings → Branches → main** (or a ruleset), require the status checks
-**Quality gate (tests + contract)** and **Gate self-test (defective data must
-fail)**. The `staging` environment is created on the first promotion; add
-required reviewers there to make promotion a manual approval.
+A failing job only blocks a merge once `main` requires it.
+`.github/rulesets/protect-main.json` defines that protection as a repository
+ruleset for the default branch:
+
+| Rule | Effect |
+|---|---|
+| Require a pull request | No direct pushes to `main`; every change goes through the gate. 0 approvals required, so a solo maintainer can still merge |
+| Required status checks | **Quality gate (tests + contract)** and **Gate self-test (defective data must fail)** must pass, on a branch that is up to date with `main` |
+| Block force pushes | History on `main` cannot be rewritten |
+| Block deletion | `main` cannot be deleted |
+
+No one can bypass it, repository admins included. The rollback runbook's
+revert path already goes through a PR.
+
+GitHub does not apply ruleset files from the repository automatically, so a
+repository admin installs it once:
+
+- **Web UI:** Settings → Rules → Rulesets → New ruleset → **Import a
+  ruleset** → choose `.github/rulesets/protect-main.json` → Create.
+- **CLI:** `gh api repos/jeffmoe/CST_660_Week5/rulesets --method POST --input .github/rulesets/protect-main.json`
+
+To change the protection, edit the file in a PR, then re-import it (or `PUT`
+it to `repos/{owner}/{repo}/rulesets/{id}`). A check named in the ruleset must
+match the workflow job `name:` exactly. Rename a job and the ruleset waits for a
+check that never reports, which blocks every merge.
+
+The `staging` environment is created on the first promotion. Add required
+reviewers there to make promotion a manual approval.
 
 ## Rollback runbook
 

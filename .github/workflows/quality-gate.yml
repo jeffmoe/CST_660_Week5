@@ -84,7 +84,7 @@ jobs:
 
       - name: Upload build artifacts
         if: always()   # keep the reports for diagnosis even when the gate fails
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: quality-gate-${{ github.sha }}
           path: |
@@ -168,7 +168,7 @@ jobs:
           fetch-depth: 0   # existing tags
 
       - name: Download gate artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: quality-gate-${{ github.sha }}
           path: build
@@ -215,7 +215,7 @@ jobs:
           ls -l staging
 
       - name: Publish to staging
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: staging-${{ steps.version.outputs.tag }}
           path: staging/${{ steps.version.outputs.tag }}/
