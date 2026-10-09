@@ -1,0 +1,239 @@
+# Data-quality gate and staging promotion for the core-banking deposits data.
+#
+# Pull request to main:  quality-gate + gate-self-test. Any failing step fails
+#                        the job; make both required status checks in the main
+#                        branch protection rules so a failure blocks the merge.
+# Push (merge) to main:  the same gate re-runs on the merged commit, then
+#                        promote copies the gate's build artifacts to the
+#                        staging environment and tags the release.
+
+name: Data quality gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-gate-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PYTHON_VERSION: "3.12"
+  # The synthetic data ends on 2026-09-30; freshness is measured the morning
+  # after. Matches validation_time in pytest.ini. Clear for a live feed.
+  VALIDATION_TIME: "2026-10-01T06:00"
+  # Contract version in force: the PR's target branch, or the commit before a merge.
+  BASELINE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+
+defaults:
+  run:
+    shell: bash   # bash -eo pipefail: a failure anywhere in a pipeline fails the step
+
+jobs:
+  quality-gate:
+    name: Quality gate (tests + contract)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # the contract change-policy check needs the baseline ref
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate synthetic data
+        # --clean: a defect-free dataset, so the gate passes only when the code
+        # and contract are sound. The defective dataset is exercised by
+        # gate-self-test below.
+        run: python scripts/generate_synthetic_data.py --clean --out build/data
+
+      - name: Run pytest suite
+        run: |
+          mkdir -p build/reports
+          pytest --data-dir=build/data \
+                 --validation-time="$VALIDATION_TIME" \
+                 --contract-baseline-ref="$BASELINE_REF" \
+                 --junitxml=build/reports/junit.xml
+
+      - name: Run contract validator
+        run: |
+          baseline=()
+          if git show "$BASELINE_REF:contracts/accounts.yaml" > build/baseline_contract.yaml 2>/dev/null; then
+            baseline=(--baseline build/baseline_contract.yaml)
+          else
+            echo "No contract at $BASELINE_REF; change policy not enforced for a new contract."
+          fi
+          python validate_contract.py contracts/accounts.yaml build/data \
+                 --now "$VALIDATION_TIME" "${baseline[@]}" | tee build/reports/contract_report.txt
+
+      - name: Upload build artifacts
+        if: always()   # keep the reports for diagnosis even when the gate fails
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-gate-${{ github.sha }}
+          path: |
+            build/data/
+            build/reports/
+          if-no-files-found: warn
+          retention-days: 30
+
+  gate-self-test:
+    # Proves the gate still blocks the failure classes it exists for: on the
+    # dataset with injected defects (duplicate keys, orphan branches, null
+    # customer IDs, the BR017 join fan-out, a x100 balance), both the test
+    # suite and the contract validator must fail. If either passes, the
+    # controls have been weakened and this job fails.
+    name: Gate self-test (defective data must fail)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate defective data
+        run: python scripts/generate_synthetic_data.py --out build/defective
+
+      - name: Test suite must fail on defective data
+        run: |
+          set +e
+          pytest -q --data-dir=build/defective --validation-time="$VALIDATION_TIME" \
+                 --contract-baseline-ref="$BASELINE_REF" > build/self_test_pytest.txt
+          code=$?
+          set -e
+          tail -n 20 build/self_test_pytest.txt
+          # pytest exit code 1 means tests ran and some failed; anything else
+          # (0 = all passed, 2+ = errors) means the gate did not do its job.
+          if [ "$code" -ne 1 ]; then
+            echo "::error::pytest exited $code on defective data; expected 1 (tests failed)"
+            exit 1
+          fi
+
+      - name: Contract validator must fail on defective data
+        run: |
+          set +e
+          python validate_contract.py contracts/accounts.yaml build/defective --now "$VALIDATION_TIME" \
+                 > build/self_test_contract.txt
+          code=$?
+          set -e
+          tail -n 3 build/self_test_contract.txt
+          if [ "$code" -ne 1 ]; then
+            echo "::error::validate_contract.py exited $code on defective data; expected 1 (violations)"
+            exit 1
+          fi
+
+  promote:
+    name: Promote to staging and tag release
+    needs: [quality-gate, gate-self-test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write   # push the tag and create the release
+    environment:
+      name: staging
+      url: ${{ steps.release.outputs.url }}
+    concurrency:
+      group: promote-staging
+      cancel-in-progress: false   # never interrupt a promotion half way
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # existing tags
+
+      - name: Download gate artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: quality-gate-${{ github.sha }}
+          path: build
+
+      - name: Determine release tag
+        id: version
+        run: |
+          # contract.version is the only "version:" key indented exactly two spaces.
+          contract_version=$(awk '/^  version: /{print $2; exit}' contracts/accounts.yaml)
+          if ! [[ "$contract_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::could not read contract.version from contracts/accounts.yaml"
+            exit 1
+          fi
+          tag="v${contract_version}-build.${GITHUB_RUN_NUMBER}"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "::error::tag $tag already exists"
+            exit 1
+          fi
+          echo "contract_version=$contract_version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble staging bundle
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          CONTRACT_VERSION: ${{ steps.version.outputs.contract_version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          stage="staging/$TAG"
+          mkdir -p "$stage"
+          cp -r build/data "$stage/data"
+          cp -r build/reports "$stage/reports"
+          cp contracts/accounts.yaml validate_contract.py requirements.txt "$stage/"
+          cat > "$stage/RELEASE.json" <<EOF
+          {
+            "tag": "$TAG",
+            "commit": "$GITHUB_SHA",
+            "contract_version": "$CONTRACT_VERSION",
+            "promoted_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "gate_run": "$RUN_URL"
+          }
+          EOF
+          (cd "$stage" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+          tar -czf "staging/$TAG.tar.gz" -C staging "$TAG"
+          ls -l staging
+
+      - name: Publish to staging
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-${{ steps.version.outputs.tag }}
+          path: staging/${{ steps.version.outputs.tag }}/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Tag and create release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Staging release $TAG (contract v${{ steps.version.outputs.contract_version }})" "$GITHUB_SHA"
+          git push origin "$TAG"
+          gh release create "$TAG" "staging/$TAG.tar.gz" \
+            --verify-tag --prerelease \
+            --title "$TAG (staging)" \
+            --notes "Promoted to staging after the data quality gate passed on ${GITHUB_SHA::7}. Bundle: synthetic data, test and contract reports, contract, validator, SHA256SUMS."
+          echo "url=${{ github.server_url }}/${{ github.repository }}/releases/tag/$TAG" >> "$GITHUB_OUTPUT"

@@ -17,6 +17,7 @@ before a change reaches production.
 | `contracts/accounts.yaml` | Producer-consumer data contract for the accounts table and its balance feed |
 | `validate_contract.py` | Validates a payload (and optionally a contract change) against a contract |
 | `requirements.txt` | Pinned dependencies |
+| `.github/workflows/quality-gate.yml` | CI gate on pull requests to `main`; staging promotion and release tag on merge |
 | `pytest.ini` | pytest configuration |
 
 ## Setup
@@ -157,3 +158,29 @@ Against the committed dataset at `--now 2026-10-01T06:00`, 5 of 42 clauses fail:
 account IDs, and the ×100 balance spike, which breaks the $750,000 ceiling on
 both `ledger_balance` and `available_balance`. A `--clean` dataset satisfies the
 contract.
+
+## CI/CD: quality gate and promotion
+
+`.github/workflows/quality-gate.yml` runs on every pull request to `main` and
+on every push (merge) to `main`.
+
+| Job | When | What it does |
+|---|---|---|
+| `quality-gate` | PR and merge | Installs `requirements.txt`, generates a **clean** synthetic dataset into `build/data`, runs the pytest suite against it (JUnit report in `build/reports`), then runs `validate_contract.py`, passing the contract on the base branch as `--baseline` so contract edits must follow the breaking-change policy. Any failing step fails the job. Data and reports are uploaded as the `quality-gate-<sha>` artifact, even on failure |
+| `gate-self-test` | PR and merge | Generates the **defective** dataset and requires both pytest and the validator to exit `1`. If a change weakens a control so the injected defects get through, this job fails |
+| `promote` | Merge to `main` only, after both jobs pass | Assembles `staging/<tag>/` with the gate's data and reports, the contract, the validator, `requirements.txt`, `RELEASE.json`, and `SHA256SUMS`. Publishes it as the `staging-<tag>` artifact in the `staging` environment, pushes an annotated tag `v<contract version>-build.<run number>` (e.g. `v1.0.0-build.42`), and creates a GitHub pre-release with the bundle attached |
+
+The gate runs on a clean dataset because the committed one is defective by
+design and would block every PR. The self-test runs on the defective dataset to
+prove the gate still catches the failure classes it exists for.
+
+`VALIDATION_TIME` (workflow `env`) pins the freshness check to
+`2026-10-01T06:00`, the same as `pytest.ini`.
+
+### Repository settings needed
+
+A failing job only blocks a merge once branch protection requires it. In
+**Settings → Branches → main** (or a ruleset), require the status checks
+**Quality gate (tests + contract)** and **Gate self-test (defective data must
+fail)**. The `staging` environment is created on the first promotion; add
+required reviewers there to make promotion a manual approval.
