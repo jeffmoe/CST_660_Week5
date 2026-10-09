@@ -11,6 +11,7 @@ Injected defects (the failure classes the quality gates must catch):
   * accounts with a null customer_id
   * one branch_reference row that duplicates an existing branch_code, so any
     accounts -> branch_reference join fans out for that branch
+  * one daily balance with a decimal-shift error (x100 for a single day)
 
 Run with:  python scripts/generate_synthetic_data.py
 """
@@ -171,12 +172,14 @@ def build_daily_balances(rng: np.random.Generator, accounts: pd.DataFrame) -> pd
     dom = DATES.day.to_numpy()
 
     # Checking: payroll on the 1st and 15th; spending roughly offsets two paydays
-    # a month so balances do not drift. An overdraft sweep from savings covers
-    # any shortfall, so the running deficit is added back.
+    # a month so balances do not drift. Each customer keeps a cushion of 40-100%
+    # of a paycheck: a sweep from savings tops the account back up whenever it
+    # dips below, so balances do not sit at $0 waiting for payday.
     payroll = rng.lognormal(np.log(1_800), 0.5, size=(n, 1))
+    cushion = payroll * rng.uniform(0.4, 1.0, size=(n, 1))
     spend = (rng.random((n, t)) < 0.55) * rng.lognormal(np.log(payroll * 0.08), 0.7, size=(n, t))
     checking = start[:, None] + np.cumsum(np.isin(dom, (1, 15)) * payroll - spend, axis=1)
-    checking += np.maximum.accumulate(np.clip(-checking, 0, None), axis=1)
+    checking += np.maximum.accumulate(np.clip(cushion - checking, 0, None), axis=1)
 
     # Savings / money market: daily accrual plus occasional deposits or withdrawals.
     flows = (rng.random((n, t)) < 0.03) * rng.choice([-1, 1], size=(n, t)) * rng.lognormal(np.log(600), 0.8, size=(n, t))
@@ -211,10 +214,12 @@ def build_daily_balances(rng: np.random.Generator, accounts: pd.DataFrame) -> pd
     })
 
 
-def inject_defects(rng: np.random.Generator, branches: pd.DataFrame, accounts: pd.DataFrame):
-    """Return broken copies of branches/accounts and a manifest of what was broken."""
+def inject_defects(rng: np.random.Generator, branches: pd.DataFrame, accounts: pd.DataFrame,
+                   balances: pd.DataFrame):
+    """Return broken copies of branches/accounts/balances and a manifest of what was broken."""
     manifest: dict = {}
     accounts = accounts.copy()
+    balances = balances.copy()
 
     # 1. Fan-out key: a branch re-org inserted a new row for BR017 without
     #    retiring the old one, so branch_code is no longer unique.
@@ -274,7 +279,36 @@ def inject_defects(rng: np.random.Generator, branches: pd.DataFrame, accounts: p
     manifest["branch_reference_duplicate_key"]["account_rows_affected_by_fanout"] = int(
         (accounts["branch_code"] == fanout_code).sum())
 
-    return branches, accounts, manifest
+    # 5. Decimal-shift spike: one day's balance posted x100 (a misplaced decimal
+    #    in a batch file). The victim is an otherwise clean, non-checking account
+    #    open for the whole window with a material prior-day balance, so this is
+    #    the only defect that touches it.
+    clean = accounts[
+        ~accounts["account_id"].duplicated(keep=False)
+        & accounts["customer_id"].notna()
+        & accounts["branch_code"].isin(branches["branch_code"])
+        & (accounts["branch_code"] != fanout_code)
+        & (accounts["open_date"] < WINDOW_START)
+        & accounts["close_date"].isna()
+        & (accounts["product_type"] != "CHECKING")
+    ]
+    spike_date = DATES[rng.integers(10, N_DAYS - 10)]
+    prior = balances[(balances["balance_date"] == spike_date - pd.Timedelta(days=1))
+                     & balances["account_id"].isin(clean["account_id"])
+                     & (balances["ledger_balance"] >= 1_000)]
+    spike_account = prior["account_id"].iloc[rng.integers(len(prior))]
+    hit = (balances["account_id"] == spike_account) & (balances["balance_date"] == spike_date)
+    before = float(balances.loc[hit, "ledger_balance"].iloc[0])
+    balances.loc[hit, ["ledger_balance", "available_balance"]] *= 100
+    manifest["balance_decimal_shift"] = {
+        "count": 1,
+        "account_id": spike_account,
+        "balance_date": spike_date.date().isoformat(),
+        "ledger_balance_correct": round(before, 2),
+        "ledger_balance_posted": round(before * 100, 2),
+    }
+
+    return branches, accounts, balances, manifest
 
 
 def main() -> None:
@@ -296,7 +330,7 @@ def main() -> None:
 
     manifest = {}
     if not args.clean:
-        branches, accounts, manifest = inject_defects(rng, branches, accounts)
+        branches, accounts, balances, manifest = inject_defects(rng, branches, accounts, balances)
 
     args.out.mkdir(parents=True, exist_ok=True)
     csv_opts = {"index": False, "date_format": "%Y-%m-%d", "lineterminator": "\n"}

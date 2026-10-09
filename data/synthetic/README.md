@@ -26,11 +26,15 @@ These are deliberate. They are the failure classes the quality gates must catch.
 | `branch_code` not in branch_reference (`BR043` ×2, `BR099`, `BR000`, `BR7`) | accounts | 5 |
 | Null `customer_id` | accounts | 4 |
 | Duplicate `branch_code` key: `BR017` appears twice (region re-org row never retired) | branch_reference | 1 extra row |
+| Decimal-shift spike: one day's ledger and available balance posted ×100 | daily_balances | 1 row |
 
 The `BR017` duplicate reproduces last quarter's incident: joining balances to
-`branch_reference` on `branch_code` doubles every BR017 account (55 rows), which
-inflates 2026-09-30 total deposits by about $1.34M (~3.8%). No row is lost and
+`branch_reference` on `branch_code` doubles every BR017 account (57 rows), which
+inflates 2026-09-30 total deposits by about $1.37M (~3.8%). No row is lost and
 nothing errors, so the overstatement is silent.
+
+Checking accounts keep a cushion of 40–100% of a paycheck (topped up by a sweep
+from savings), so they do not sit at $0 between paydays.
 
 Everything else is clean: `daily_balances` has no orphan accounts and no duplicate
 `(account_id, balance_date)` pairs, and every non-null `customer_id` resolves.
